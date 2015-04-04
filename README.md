@@ -1,5 +1,17 @@
 # Schema JS
 
-Schema API interface for browser-based JavaScript
+Schema API library for client side JavaScript
 
-See https://schema.io for details
+Visit https://schema.io for details
+
+## Examples
+
+	...
+
+## Documentation
+
+	...
+
+## License
+
+MIT
