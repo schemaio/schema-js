@@ -1152,6 +1152,7 @@ util.inherits(Record, Resource);
  */
 Record.prototype.__initLinks = function(links) {
 
+    var self = this;
     for (var key in links) {
         if (!links.hasOwnProperty(key)) {
             continue;
@@ -1165,7 +1166,7 @@ Record.prototype.__initLinks = function(links) {
                 return this;
             };
             // record.link.each(...)
-            res[key].each = function(callback) {
+            res[key].each = function(callback, then) {
                 if (typeof callback !== 'function') return;
                 res[key](function(result) {
                     if (result && result.results) {
@@ -1175,38 +1176,56 @@ Record.prototype.__initLinks = function(links) {
                     } else {
                         callback(result);
                     }
+                    if (typeof then === 'function') {
+                        then(result);
+                    }
                 });
             };
             // record.link.get(...)
-            res[key].get = function(relUrl, relData, callback) {
-                if (typeof relUrl === 'function') {
-                    callback = relUrl;
-                    relUrl = null;
-                } else if (typeof relData === 'function') {
-                    callback = relData;
-                    relData = null;
-                }
-                if (typeof relUrl === 'object') {
-                    relData = relUrl;
-                    relUrl = null;
-                    if (typeof relData === 'function') {
-                        callback = relData;
-                        relData = null;
-                    }
-                }
-                if (typeof callback !== 'function') return;
-                if (relUrl) {
-                    url = url + '/' + relUrl.replace(/^\//, '');
-                }
-                res.__client.get(url, relData, callback);
-                return this;
-            };
+            res[key].get = self.__linkRequest.bind(self, 'get', url);
+            // record.link.put(...)
+            res[key].put = self.__linkRequest.bind(self, 'put', url);
+            // record.link.post(...)
+            res[key].post = self.__linkRequest.bind(self, 'post', url);
+            // record.link.delete(...)
+            res[key].post = self.__linkRequest.bind(self, 'delete', url);
             // api.put(record.link, ...)
             res[key].toString = function() {
                 return url;
             };
         }(this, key));
     }
+};
+
+/**
+ * Build a link url for client request
+ *
+ * @param  string field
+ * @return string
+ */
+Record.prototype.__linkRequest = function(method, url, relUrl, relData, callback) {
+
+    if (typeof relUrl === 'function') {
+        callback = relUrl;
+        relUrl = null;
+    } else if (typeof relData === 'function') {
+        callback = relData;
+        relData = null;
+    }
+    if (typeof relUrl === 'object') {
+        relData = relUrl;
+        relUrl = null;
+        if (typeof relData === 'function') {
+            callback = relData;
+            relData = null;
+        }
+    }
+    if (typeof callback !== 'function') return;
+    if (relUrl) {
+        url = url + '/' + relUrl.replace(/^\//, '');
+    }
+    this.__client[method](url, relData, callback);
+    return this;
 };
 
 /**
@@ -1368,7 +1387,7 @@ if (typeof exports !== 'undefined') {
 (function() {
 
 // Not relevant for Node
-if (exports) {
+if (typeof module !== 'undefined' && module.exports) {
     return;
 }
 

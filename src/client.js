@@ -4,7 +4,7 @@
 (function() {
 
 // Not relevant for Node
-if (exports) {
+if (typeof module !== 'undefined' && module.exports) {
     return;
 }
 
