@@ -1224,8 +1224,7 @@ Record.prototype.__linkRequest = function(method, url, relUrl, relData, callback
     if (relUrl) {
         url = url + '/' + relUrl.replace(/^\//, '');
     }
-    this.__client[method](url, relData, callback);
-    return this;
+    return this.__client[method](url, relData, callback);
 };
 
 /**
