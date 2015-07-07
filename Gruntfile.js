@@ -21,9 +21,14 @@ module.exports = function(grunt) {
             build: {
                 options: {
                     position: 'top',
-                    banner: '/*! <%= pkg.name %>.js (Version <%= pkg.version %>) <%= grunt.template.today("yyyy-mm-dd") %> */',
-                    linebreak: true
-                }
+                    banner: "/*! <%= pkg.name %>.js (Version <%= pkg.version %>) <%= grunt.template.today(\"yyyy-mm-dd\") %> */\n",
+                },
+                files: [
+                    {
+                        src: '<%= pkg.name %>.js',
+                        dest: '<%= pkg.name %>.js'
+                    }
+                ]
             }
         },
         uglify: {
