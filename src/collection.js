@@ -25,8 +25,7 @@ var Collection = this.Schema.Collection = function(url, result, client) {
         this.count = result.$data.count;
         this.page = result.$data.page;
         this.pages = result.$data.pages || {};
-        this.length = result.$data.results
-            && result.$data.results.length || 0;
+        this.length = result.$data.results ? result.$data.results.length : 0;
     }
 
     result.$data = result.$data.results;
@@ -83,9 +82,31 @@ Collection.prototype.__buildRecords = function(url, result, client) {
  * @param  function callback
  */
 Collection.prototype.each = function(callback) {
+
     for (var i = 0; i < this.length; i++) {
         callback.call(this, this[i]);
     }
+};
+
+/**
+ * Get raw collection data
+ *
+ * @return object
+ */
+Collection.prototype.toObject = function() {
+
+    var results = [];
+    if (this.results) {
+        for (var i = 0; i < this.results.length; i++) {
+            results[i] = this.results[i].toObject();
+        }
+    }
+    return {
+        count: this.count,
+        results: results,
+        page: this.page,
+        pages: this.pages
+    };
 };
 
 /**
@@ -94,16 +115,10 @@ Collection.prototype.each = function(callback) {
  * @return object
  */
 Collection.prototype.inspect = function() {
-    var props = {
-        count: this.count,
-        results: this.results,
-        page: this.page,
-        pages: this.pages
-    };
-    for (var i = 0; i < this.length; i++) {
-        if (this.$links) {
-            props.$links = this.$links;
-        }
+
+    var props = this.toObject();
+    if (this.$links) {
+        props.$links = this.$links;
     }
     return util.inspect(props);
 };

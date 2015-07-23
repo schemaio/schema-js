@@ -131,7 +131,8 @@ Record.prototype.__linkUrl = function(field) {
  * @return object
  */
 Record.prototype.inspect = function() {
-    var props = this.__getData();
+
+    var props = this.toObject();
     if (this.$links) {
         if (!this.collection) {
             props.$links = this.$links;

@@ -16,7 +16,7 @@ var Resource = this.Schema.Resource = function(url, result, client) {
 
     this.__url = url;
     this.__client = client;
-    this.__fields = [];
+    this.__data = null;
 
     if (result) {
         if (result.$links) {
@@ -39,19 +39,21 @@ Resource.$links = {};
 /**
  * Initialize resource data
  *
- * @param  mixed data
+ * @param  object data
  */
 Resource.prototype.__initData = function(data) {
 
-    if (typeof data !== 'object') {
+    if (!data || typeof data !== 'object') {
         return;
     }
-    for (var key in data) {
+    this.__data = data;
+    var keys = Object.keys(data);
+    for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
         if (!data.hasOwnProperty(key)) {
             continue;
         }
         this[key] = data[key];
-        this.__fields.push(key);
     }
 };
 
@@ -60,13 +62,27 @@ Resource.prototype.__initData = function(data) {
  *
  * @return object
  */
-Resource.prototype.__getData = function() {
+Resource.prototype.toObject = function() {
 
     var data = {};
-    for(var i = 0; i < this.__fields.length; i++) {
-        data[this.__fields[i]] = this[this.__fields[i]];
+    if (this.__data) {
+        var keys = Object.keys(this.__data);
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            data[key] = this.__data[key];
+        }
     }
     return data;
+};
+
+/**
+ * Get raw resource data
+ *
+ * @return object
+ */
+Resource.prototype.toJSON = function() {
+
+    return JSON.stringify(this.toObject());
 };
 
 /**
@@ -75,6 +91,7 @@ Resource.prototype.__getData = function() {
  * @return string
  */
 Resource.prototype.toString = function() {
+
     return this.__url;
 };
 
@@ -84,11 +101,9 @@ Resource.prototype.toString = function() {
  * @return object
  */
 Resource.prototype.inspect = function() {
-    var props = this.__getData();
+
+    var props = this.toObject();
     if (this.$links) {
-        /*for (var field in this.$links) {
-            props[field] = this[field]
-        }*/
         props.$links = this.$links;
     }
     return util.inspect(props);
