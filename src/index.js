@@ -93,7 +93,7 @@ Schema.card.createToken = function(card, gateway, callback) {
                 card: {
                     token: response.id,
                     brand: response.card.brand,
-                    last4: card.number.substring(-4, 4),
+                    last4: response.card.last4,
                     gateway: gateway,
                     exp_month: card.exp_month,
                     exp_year: card.exp_year
@@ -113,7 +113,7 @@ Schema.card.createToken = function(card, gateway, callback) {
                     // Note: just for testing
                     token: 'test_card_token_'+(new Date().getTime()),
                     brand: 'Visa',
-                    last4: card.number.substring(-4, 4),
+                    last4: card.number.trim().substring(card.number.length - 4),
                     gateway: 'test_card',
                     exp_month: card.exp_month,
                     exp_year: card.exp_year,
