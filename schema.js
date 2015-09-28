@@ -1,4 +1,4 @@
-/*! schema.js (Version 1.0.3) 2015-09-23 */
+/*! schema.js (Version 1.0.3) 2015-09-28 */
 
 // Promise 6.0.0 (source: https://www.promisejs.org/polyfills/promise-6.0.0.js)
 (function e(t, n, r) {
@@ -448,18 +448,19 @@ Schema.card.createToken = function(card, gateway, callback) {
     }
 
     if (gateway === 'stripe') {
+        var billing = card.billing || {};
         var stripeCard = {
             number: card.number,
             cvc: card.cvc,
             exp_month: card.exp_month,
             exp_year: card.exp_year,
-            name: card.billing.name,
-            address_line1: card.billing.address1,
-            address_line2: card.billing.address2,
-            address_city: card.billing.city,
-            address_state: card.billing.state,
-            address_zip: card.billing.zip,
-            address_country: card.billing.country
+            name: billing.name,
+            address_line1: billing.address1,
+            address_line2: billing.address2,
+            address_city: billing.city,
+            address_state: billing.state,
+            address_zip: billing.zip,
+            address_country: billing.country
         };
         Stripe.setPublishableKey(Schema.publishableKey);
         Stripe.card.createToken(stripeCard, function(status, response) {
@@ -474,8 +475,10 @@ Schema.card.createToken = function(card, gateway, callback) {
                     last4: response.card.last4,
                     gateway: gateway,
                     exp_month: card.exp_month,
-                    exp_year: card.exp_year
-                    // TODO: return fingerprint?
+                    exp_year: card.exp_year,
+                    address_check: response.card.address_line1_check,
+                    zip_check: response.card.address_zip_check,
+                    cvc_check: response.card.cvc_check
                 }
             };
             if (!response.livemode) {
@@ -1451,3 +1454,354 @@ var Client = this.Schema.Client = function(clientId, publicKey, options) {
 
 }).call(this);
 
+
+/**
+ * Form
+ */
+(function() {
+
+var Schema = this.Schema;
+var Form = Schema.Form = {};
+
+/**
+ * Validate and tokenize card data for payment forms
+ *
+ * @param  object params
+ *  string publishableKey (Required)
+ *      - Public/publishable key for tokenization
+ *  HTMLFormElement form (Optional) (Default: first form element)
+ *      - Represents the form to capture data
+ *  string name (Optional) (Default: 'card')
+ *      - Name of the card submission parameter
+ *  string gateway (Optional) (Default: 'stripe')
+ *      - Id of the payment gateway to use for tokenization
+ *  function onError (Optional)
+ *      - Handler for card errors triggered on submit
+ */
+Form.onSubmitCard = function(params) {
+
+    Form._validateCardParams(params);
+
+    Form._addEventListener(params.form, 'submit', Form._onSubmitCard.bind(this, params));
+
+};
+
+/**
+ * Handle card form submission event
+ */
+Form._onSubmitCard = function(params, event) {
+
+    // Card expiry is { month: 00, year: 0000 }
+    var cardExpiry;
+    if (params.fields.cardExp) {
+        cardExpiry = Form.cardExpiryVal(params.fields.cardExp.value);
+    } else {
+        cardExpiry = {
+            month: params.fields.cardExpMonth.value,
+            year: params.fields.cardExpYear.value
+        };
+    }
+
+    // Assemble card info
+    var data = {
+        number: params.fields.cardNumber.value,
+        cvc: params.fields.cardCVC.value,
+        exp_month: cardExpiry.month,
+        exp_year: cardExpiry.year,
+        billing: {}
+    };
+    // Billing info is optional
+    if (params.fields.billing) {
+        data.billing = {
+            name: params.fields.billingName && params.fields.billingName.value,
+            address1: params.fields.billingAddress1 && params.fields.billingAddress1.value,
+            address2: params.fields.billingAddress2 && params.fields.billingAddress2.value,
+            city: params.fields.billingCity && params.fields.billingCity.value,
+            state: params.fields.billingState && params.fields.billingState.value,
+            zip: params.fields.billingZip && params.fields.billingZip.value,
+            country: params.fields.billingCountry && params.fields.billingCountry.value
+        }
+    };
+
+    // Card values are serialized and validated on change
+    var dataSerialized = JSON.stringify(data);
+
+    // Return if card data is not changed
+    if (params.form.__cardData === dataSerialized) {
+        return;
+    }
+
+    // Prevent form submission
+    Form._preventDefault(event);
+
+    // Trigger submit handler
+    if (typeof params.onSubmit === 'function') {
+        params.onSubmit();
+    }
+
+    // Validate card data
+    var fieldsValid = true;
+    if (!Schema.validateCVC(data.cvc)) {
+        fieldsValid = false;
+        Form._triggerFieldError(
+            params.onError, params.fields.cardCVC, 'Card CVC code is not valid'
+        );
+    }
+    if (!Schema.validateExpiry(data.exp_month, data.exp_year)) {
+        fieldsValid = false;
+        if (params.fields.cardExp) {
+            Form._triggerFieldError(
+                params.onError, params.fields.cardExp, 'Card expiry is not valid'
+            );
+        }
+        if (params.fields.cardExpMonth) {
+            Form._triggerFieldError(
+                params.onError, params.fields.cardExpMonth, 'Card expiry month is not valid'
+            );
+        }
+        if (params.fields.cardExpYear) {
+            Form._triggerFieldError(
+                params.onError, params.fields.cardExpYear, 'Card expiry year is not valid'
+            );
+        }
+    }
+    if (!Schema.validateCardNumber(data.number)) {
+        fieldsValid = false;
+        Form._triggerFieldError(
+            params.onError, params.fields.cardNumber, 'Card number is not valid'
+        );
+    }
+    if (!fieldsValid) {
+        return;
+    }
+
+    // Card data is valid, continue to process
+    params.form.__cardData = dataSerialized;
+
+    Schema.setPublishableKey(params.publicKey);
+    Schema.card.createToken(data, params.gateway, function(status, response) {
+        if (response.error) {
+            params.form.__cardData = null;
+            Form._triggerFieldError(
+                params.onError, params.fields.cardNumber, response.error.message
+            );
+        } else {
+            // Clear previous data fields first
+            var els = document.getElementsByClassName('x-card-response-data');
+            for (var i = 0; i < els.length; i++) {
+                els[i].parentNode.removeChild(els[i]);
+            }
+            // Append card response fields to form
+            var fieldName = params.name;
+            for (var key in response.card) {
+                if (typeof response.card[key] === 'object') {
+                    continue;
+                }
+                var el = document.createElement('input');
+                el.type = 'hidden';
+                el.className = 'x-card-response-data';
+                el.name = params.name + '['+key+']';
+                el.value = response.card[key];
+                params.form.appendChild(el);
+            }
+            params.form.submit();
+        }
+    });
+};
+
+/**
+ *
+ */
+Form.cardExpiryVal = function(value) {
+
+    var parts = value.split(/[\s\/]+/, 2);
+    var month = parts[0];
+    var year = parts[1];
+
+    // Convert 2 digit year
+    if (year && year.length === 2 && /^\d+$/.test(year)) {
+        var prefix = (new Date).getFullYear().toString().substring(0, 2);
+        year = prefix + year;
+    }
+    // Ensure 2 digit month
+    if (month && month.length === 1) {
+        month = '0' + month;
+    }
+
+    return {
+        month: month,
+        year: year
+    };
+};
+
+/**
+ * Make sure params are valid
+ *
+ * @return object
+ */
+Form._validateCardParams = function(params) {
+
+    params || {};
+
+    // Ensure valid publishable key
+    // Note: publishableKey is standard term until publicKey is available
+    params.publicKey = params.publicKey || params.publishableKey;
+    if (!params.publicKey) {
+        throw "Form.onSubmitCard(): publishableKey required";
+    }
+
+    // Ensure valid form element
+    if (!params.form) {
+        params.form = Form._findDefaultFormElement();
+    } else {
+        params.form = Form._sanitizeElement(params.form);
+    }
+    if (params.form === null) {
+        throw "Form.onSubmitCard(): form not found with .card-number field";
+    }
+
+    // Get valid card input fields
+    var fields = params.fields || {};
+    fields.cardNumber = Form._sanitizeElement(fields.cardNumber || '.card-number');
+    if (!fields.cardNumber) {
+        throw "Form.onSubmitCard(): card number field not found";
+    }
+    fields.cardExp = Form._sanitizeElement(fields.cardExp || '.card-exp');
+    fields.cardExpMonth = Form._sanitizeElement(fields.cardExpMonth || '.card-exp-month');
+    if (!fields.cardExp && !fields.cardExpMonth) {
+        throw "Form.onSubmitCard(): card expiration field not found";
+    }
+    fields.cardExpYear = Form._sanitizeElement(fields.cardExpYear || '.card-exp-year');
+    if (!fields.cardExp && !fields.cardExpYear) {
+        throw "Form.onSubmitCard(): card expiration year field not found";
+    }
+    fields.cardCVC = Form._sanitizeElement(fields.cardCvc || fields.cardCVC || '.card-cvc');
+    if (!fields.cardCVC) {
+        throw "Form.onSubmitCard(): card cvc field not found";
+    }
+    fields.billingName = Form._sanitizeElement(fields.billingName || '.billing-name');
+    fields.billingAddress1 = Form._sanitizeElement(fields.billingAddress2 || '.billing-address1');
+    fields.billingAddress2 = Form._sanitizeElement(fields.billingAddress2 || '.billing-address2');
+    fields.billingCity = Form._sanitizeElement(fields.billingCity || '.billing-city');
+    fields.billingState = Form._sanitizeElement(fields.billingState || '.billing-state');
+    fields.billingZip = Form._sanitizeElement(fields.billingZip || '.billing-zip');
+    fields.billingCountry = Form._sanitizeElement(fields.billingCountry || '.billing-country');
+    fields.billing = !!(
+        fields.billingName ||
+        fields.billingAddress1 ||
+        fields.billingAddress2 ||
+        fields.billingCity ||
+        fields.billingState ||
+        fields.billingZip ||
+        fields.billingCountry
+    );
+
+    params.fields = fields;
+
+    // Default submit parameter name
+    params.name = params.name || 'card';
+
+    // Default payment gatway
+    params.gateway = params.gateway || 'stripe';
+};
+
+/**
+ * Get a clean HTMLElement reference
+ * May be passed by jQuery, ID, or class name
+ *
+ * @param  mixed el
+ * @return HTMLElement
+ */
+Form._sanitizeElement = function(el) {
+
+    if (jQuery) {
+        // By jQuery reference
+        return jQuery(el).get(0);
+    } else if (typeof el === 'string') {
+        if (el[0] === '.') {
+            // By class name
+            return document.getElementsByClassName(el.substring(1))[0];
+        } else {
+            // By ID
+            return document.getElementById(el);
+        }
+    } else if (typeof el === 'object' && el !== null) {
+        if (el.toString().indexOf('[object HTML') === 0) {
+            // By direct reference
+            return el;
+        }
+    }
+    // Not valid
+    return null;
+}
+
+/**
+ * Find the first form element with card-number input
+ *
+ * @return HTMLFormElement
+ */
+Form._findDefaultFormElement = function() {
+
+    var field = document.getElementsByClassName('card-number')[0];
+    if (field) {
+        while (true) {
+            if (field = field.parentNode) {
+                if (field.tagName === 'FORM') {
+                    return field;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    return null;
+};
+
+/**
+ *
+ */
+Form._triggerFieldError = function(handler, field, message) {
+
+    if (typeof handler === 'function') {
+        return handler(field, message);
+    }
+    if (field && field.className.indexOf('error') === -1) {
+        field.className = field.className + ' error';
+    }
+};
+
+/**
+ * Add a DOM event listener, cross browser
+ *
+ * @param  HTMLElement el
+ * @param  string event
+ * @param  function handler
+ */
+Form._addEventListener = function(el, event, handler) {
+
+    if (el.addEventListener) {
+        el.addEventListener(event, handler, false);
+    } else {
+        el.attachEvent('on' + event, function() {
+            // set the this pointer same as addEventListener when fn is called
+            return handler.call(el, window.event);   
+        });
+    }
+};
+
+/**
+ * Prevent default event behavior, cross browser
+ *
+ * @param  HTMLEvent event
+ */
+Form._preventDefault = function(event) {
+
+    if (event.preventDefault) { 
+        event.preventDefault();
+    } else {
+        event.returnValue = false; 
+    }
+    return;
+};
+
+}).call(this);

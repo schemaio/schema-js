@@ -12,7 +12,9 @@ module.exports = function(grunt) {
                     'src/resource.js',
                     'src/record.js',
                     'src/collection.js',
-                    'src/client.js'
+                    'src/client.js',
+                    // Order is not important for the following
+                    'src/form.js'
                 ],
                 dest: '<%= pkg.name %>.js'
             }

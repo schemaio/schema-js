@@ -70,18 +70,19 @@ Schema.card.createToken = function(card, gateway, callback) {
     }
 
     if (gateway === 'stripe') {
+        var billing = card.billing || {};
         var stripeCard = {
             number: card.number,
             cvc: card.cvc,
             exp_month: card.exp_month,
             exp_year: card.exp_year,
-            name: card.billing.name,
-            address_line1: card.billing.address1,
-            address_line2: card.billing.address2,
-            address_city: card.billing.city,
-            address_state: card.billing.state,
-            address_zip: card.billing.zip,
-            address_country: card.billing.country
+            name: billing.name,
+            address_line1: billing.address1,
+            address_line2: billing.address2,
+            address_city: billing.city,
+            address_state: billing.state,
+            address_zip: billing.zip,
+            address_country: billing.country
         };
         Stripe.setPublishableKey(Schema.publishableKey);
         Stripe.card.createToken(stripeCard, function(status, response) {
@@ -96,8 +97,10 @@ Schema.card.createToken = function(card, gateway, callback) {
                     last4: response.card.last4,
                     gateway: gateway,
                     exp_month: card.exp_month,
-                    exp_year: card.exp_year
-                    // TODO: return fingerprint?
+                    exp_year: card.exp_year,
+                    address_check: response.card.address_line1_check,
+                    zip_check: response.card.address_zip_check,
+                    cvc_check: response.card.cvc_check
                 }
             };
             if (!response.livemode) {
