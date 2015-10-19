@@ -27,10 +27,10 @@ util.inherits = function(baseObj, superObj) {
 /**
  * Inspect a variable and output to console
  */
-util.inspect = function(arg) {
+util.inspect = function(arg, options) {
 	if (require !== undefined) {
 		// NodeJS
-		return require('util').inspect(arg);
+		return require('util').inspect(arg, options);
 	} else {
 		// Browser
 		return console.log(arg);

@@ -35,47 +35,84 @@ util.inherits(Record, Resource);
 Record.prototype.__initLinks = function(links) {
 
     var self = this;
-    for (var key in links) {
-        if (!links.hasOwnProperty(key)) {
-            continue;
+    this.__forEachLink(links, function(link, key, res, path) {
+        var url = self.__linkUrl(path);
+        // expanded?
+        if (res[key]) {
+            return;
         }
-        (function(res, key) {
-            var url = res.__linkUrl(key);
-            // record.link(...)
-            res[key] = function(callback) {
-                if (typeof callback !== 'function') return;
-                res.__client.get(url, null, callback);
-                return this;
-            };
-            // record.link.each(...)
-            res[key].each = function(callback, then) {
-                if (typeof callback !== 'function') return;
-                res[key](function(result) {
-                    if (result && result.results) {
-                        for (var i = 0; i < result.results.length; i++) {
-                            callback(result.results[i]);
-                        }
-                    } else {
-                        callback(result);
+        // record.link(...)
+        res[key] = function(callback) {
+            if (typeof callback !== 'function') return;
+            res.__client.get(url, null, callback);
+            return this;
+        };
+        // record.link.each(...)
+        res[key].each = function(callback, then) {
+            if (typeof callback !== 'function') return;
+            res[key](function(result) {
+                if (result && result.results) {
+                    for (var i = 0; i < result.results.length; i++) {
+                        callback(result.results[i]);
                     }
-                    if (typeof then === 'function') {
-                        then(result);
-                    }
-                });
-            };
-            // record.link.get(...)
-            res[key].get = self.__linkRequest.bind(self, 'get', url);
-            // record.link.put(...)
-            res[key].put = self.__linkRequest.bind(self, 'put', url);
-            // record.link.post(...)
-            res[key].post = self.__linkRequest.bind(self, 'post', url);
-            // record.link.delete(...)
-            res[key].post = self.__linkRequest.bind(self, 'delete', url);
-            // api.put(record.link, ...)
-            res[key].toString = function() {
-                return url;
-            };
-        }(this, key));
+                } else {
+                    callback(result);
+                }
+                if (typeof then === 'function') {
+                    then(result);
+                }
+            });
+        };
+        // record.link.get(...)
+        res[key].get = self.__linkRequest.bind(self, 'get', url);
+        // record.link.put(...)
+        res[key].put = self.__linkRequest.bind(self, 'put', url);
+        // record.link.post(...)
+        res[key].post = self.__linkRequest.bind(self, 'post', url);
+        // record.link.delete(...)
+        res[key].post = self.__linkRequest.bind(self, 'delete', url);
+        // api.put(record.link, ...)
+        res[key].toString = function() {
+            return url;
+        };
+    });
+};
+
+/**
+ * Iterate over link fields
+ *
+ * @param  function callback (link, key, res)
+ */
+Record.prototype.__forEachLink = function(links, res, path, callback) {
+
+    if (typeof res === 'function') {
+        callback = res;
+        res = this;
+        path = '';
+    } else if (typeof path === 'function') {
+        callback = path;
+        path = '';
+    }
+    var keys = Object.keys(links);
+    for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        var link = links[key];
+        var keyPath = path+'/'+key;
+        if (link.url) {
+            callback(link, key, res, keyPath);
+        }
+        if (link.links) {
+            if (link.links['*']) {
+                if (!(res[key] instanceof Array)) continue;
+                for (var j = 0; j < res[key].length; j++) {
+                    if (!res[key][j]) continue;
+                    keyPath += '/'+(res[key][j].id || j);
+                    this.__forEachLink(link.links['*'], res[key][j], keyPath, callback);
+                }
+            } else {
+                this.__forEachLink(link.links, res[key], keyPath, callback);
+            }
+        }
     }
 };
 
@@ -115,14 +152,14 @@ Record.prototype.__linkRequest = function(method, url, relUrl, relData, callback
  * @param  string field
  * @return string
  */
-Record.prototype.__linkUrl = function(field) {
+Record.prototype.__linkUrl = function(path) {
 
     var url = this.__url;
     var qpos = this.__url.indexOf('?');
     if (qpos !== -1) {
         url = url.substring(0, qpos);
     }
-    return url.replace(/\/$/, '') + '/' + field;
+    return url.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
 };
 
 /**
@@ -130,7 +167,7 @@ Record.prototype.__linkUrl = function(field) {
  *
  * @return object
  */
-Record.prototype.inspect = function() {
+Record.prototype.inspect = function(depth) {
 
     var props = this.toObject();
     if (this.$links) {
@@ -138,7 +175,7 @@ Record.prototype.inspect = function() {
             props.$links = this.$links;
         }
     }
-    return util.inspect(props);
+    return util.inspect(props, {depth: depth, colors: true});
 };
 
 // Exports

@@ -114,13 +114,13 @@ Collection.prototype.toObject = function() {
  *
  * @return object
  */
-Collection.prototype.inspect = function() {
+Collection.prototype.inspect = function(depth) {
 
     var props = this.toObject();
     if (this.$links) {
         props.$links = this.$links;
     }
-    return util.inspect(props);
+    return util.inspect(props, {depth: depth, colors: true});
 };
 
 // Exports for Node

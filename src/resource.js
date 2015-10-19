@@ -100,13 +100,13 @@ Resource.prototype.toString = function() {
  *
  * @return object
  */
-Resource.prototype.inspect = function() {
+Resource.prototype.inspect = function(depth) {
 
     var props = this.toObject();
     if (this.$links) {
         props.$links = this.$links;
     }
-    return util.inspect(props);
+    return util.inspect(props, {depth: depth, colors: true});
 };
 
 
