@@ -84,8 +84,8 @@ Schema.card.createToken = function(card, gateway, callback) {
             address_zip: billing.zip,
             address_country: billing.country
         };
-        Stripe.setPublishableKey(Schema.publishableKey);
-        Stripe.card.createToken(stripeCard, function(status, response) {
+        this.Stripe.setPublishableKey(Schema.publishableKey);
+        this.Stripe.card.createToken(stripeCard, function(status, response) {
             if (response.error || status != 200) {
                 callback(status, response);
                 return;
@@ -134,7 +134,7 @@ Schema.createToken = function() {
  * Determine card type
  */
 Schema.card.cardType = function() {
-    return Stripe.card.cardType.apply(Stripe, arguments);
+    return this.Stripe.card.cardType.apply(this.Stripe, arguments);
 };
 Schema.cardType = function() {
     return Schema.card.cardType.apply(this, arguments);
@@ -144,7 +144,7 @@ Schema.cardType = function() {
  * Validate card number
  */
 Schema.card.validateCardNumber = function() {
-    return Stripe.card.validateCardNumber.apply(Stripe, arguments);
+    return this.Stripe.card.validateCardNumber.apply(this.Stripe, arguments);
 };
 Schema.validateCardNumber = function() {
     return Schema.card.validateCardNumber.apply(this, arguments);
@@ -154,7 +154,7 @@ Schema.validateCardNumber = function() {
  * Validate card expiry
  */
 Schema.card.validateExpiry = function() {
-    return Stripe.card.validateExpiry.apply(Stripe, arguments);
+    return this.Stripe.card.validateExpiry.apply(this.Stripe, arguments);
 };
 Schema.validateExpiry = function() {
     return Schema.card.validateExpiry.apply(this, arguments);
@@ -164,7 +164,7 @@ Schema.validateExpiry = function() {
  * Validate card CVC code
  */
 Schema.card.validateCVC = function() {
-    return Stripe.card.validateCVC.apply(Stripe, arguments);
+    return this.Stripe.card.validateCVC.apply(this.Stripe, arguments);
 };
 Schema.validateCVC = function() {
     return Schema.card.validateCVC.apply(this, arguments);
@@ -566,6 +566,9 @@ Schema.validateCVC = function() {
             }
         }
     }.call(this);
+
+// Alias Stripe for node compatibility
+this.Schema.Stripe = this.Stripe;
 
 /**
  * Aliases for compatibility between Stripe v1 and v2
