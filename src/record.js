@@ -93,6 +93,9 @@ Record.prototype.__forEachLink = function(links, res, path, callback) {
         callback = path;
         path = '';
     }
+    if (!res) {
+        return;
+    }
     var keys = Object.keys(links);
     for (var i = 0; i < keys.length; i++) {
         var key = keys[i];
