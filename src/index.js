@@ -4,8 +4,9 @@
 (function() {
 
 var Schema = this.Schema = {
-    publicKey: null, // Used for standard API calls
-    publishableKey: null // Used for card gateway API calls
+    publicUrl: 'https://api.schema.io',
+    vaultUrl: 'https://vault.schema.io',
+    publicKey: null // Used for standard API calls
 };
 
 /**
@@ -15,15 +16,17 @@ var Schema = this.Schema = {
  */
 Schema.setPublicKey = function(key) {
     this.publicKey = key;
+    delete this._vaultClient;
+    delete this._publicClient;
 };
 
 /**
- * Set publishable key for gateway requests (Stripe only)
+ * Alias for stripe.js compatibility
  *
  * @param  string key
  */
 Schema.setPublishableKey = function(key) {
-    this.publishableKey = key;
+    return Schema.setPublicKey(key);
 };
 
 /**
@@ -35,16 +38,10 @@ Schema.card = {};
  * Create a token from card details
  *
  * @param  object card
- * @param  string gateway
  * @param  function callback
  * @return void
  */
-Schema.card.createToken = function(card, gateway, callback) {
-
-    if (typeof gateway === 'function') {
-        callback = gateway;
-        gateway = 'test_card';
-    }
+Schema.card.createToken = function(card, callback) {
 
     var error = null;
     if (!card) {
@@ -59,9 +56,6 @@ Schema.card.createToken = function(card, gateway, callback) {
     if (!Schema.card.validateCVC(card.cvc)) {
         error = 'Card CVC code appears to be invalid';
     }
-    if (!['test_card', 'stripe'].indexOf(gateway) === -1) {
-        error = 'Gateway not yet supported: '+gateway;
-    }
     if (error) {
         setTimeout(function() {
             callback(200, {error: error});
@@ -69,62 +63,16 @@ Schema.card.createToken = function(card, gateway, callback) {
         return;
     }
 
-    if (gateway === 'stripe') {
-        var billing = card.billing || {};
-        var stripeCard = {
-            number: card.number,
-            cvc: card.cvc,
-            exp_month: card.exp_month,
-            exp_year: card.exp_year,
-            name: billing.name,
-            address_line1: billing.address1,
-            address_line2: billing.address2,
-            address_city: billing.city,
-            address_state: billing.state,
-            address_zip: billing.zip,
-            address_country: billing.country
-        };
-        this.Stripe.setPublishableKey(Schema.publishableKey);
-        this.Stripe.card.createToken(stripeCard, function(status, response) {
-            if (response.error || status != 200) {
-                callback(status, response);
-                return;
-            }
-            var response2 = {
-                card: {
-                    token: response.id,
-                    brand: response.card.brand,
-                    last4: response.card.last4,
-                    gateway: gateway,
-                    exp_month: card.exp_month,
-                    exp_year: card.exp_year,
-                    address_check: response.card.address_line1_check,
-                    zip_check: response.card.address_zip_check,
-                    cvc_check: response.card.cvc_check
-                }
-            };
-            if (!response.livemode) {
-                response2.card.test = true;
-            }
-            callback(status, response2);
-        });
-    } else {
-        // TODO: integrate with card vault
-        setTimeout(function() {
-            callback(200, {
-                card: {
-                    // Note: just for testing
-                    token: 'test_card_token_'+(new Date().getTime()),
-                    brand: 'Visa',
-                    last4: card.number.trim().substring(card.number.length - 4),
-                    gateway: 'test_card',
-                    exp_month: card.exp_month,
-                    exp_year: card.exp_year,
-                    test: true
-                }
-            });
-        }, 1000);
-    }
+    // Get a token from Schema Vault
+    Schema.vault().post('/tokens', card, function(result, headers) {
+        var response = result;
+        if (result.errors) {
+            var param = Object.keys(result.errors)[0];
+            response.error = result.errors[param];
+            response.error.param = param;
+        }
+        return callback(headers.$status, response);
+    });
 };
 Schema.createToken = function() {
     return Schema.card.createToken.apply(this, arguments);
@@ -134,7 +82,7 @@ Schema.createToken = function() {
  * Determine card type
  */
 Schema.card.cardType = function() {
-    return this.Stripe.card.cardType.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.cardType.apply(Schema.Stripe, arguments);
 };
 Schema.cardType = function() {
     return Schema.card.cardType.apply(this, arguments);
@@ -144,7 +92,7 @@ Schema.cardType = function() {
  * Validate card number
  */
 Schema.card.validateCardNumber = function() {
-    return this.Stripe.card.validateCardNumber.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.validateCardNumber.apply(Schema.Stripe, arguments);
 };
 Schema.validateCardNumber = function() {
     return Schema.card.validateCardNumber.apply(this, arguments);
@@ -154,7 +102,7 @@ Schema.validateCardNumber = function() {
  * Validate card expiry
  */
 Schema.card.validateExpiry = function() {
-    return this.Stripe.card.validateExpiry.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.validateExpiry.apply(Schema.Stripe, arguments);
 };
 Schema.validateExpiry = function() {
     return Schema.card.validateExpiry.apply(this, arguments);
@@ -164,11 +112,63 @@ Schema.validateExpiry = function() {
  * Validate card CVC code
  */
 Schema.card.validateCVC = function() {
-    return this.Stripe.card.validateCVC.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.validateCVC.apply(Schema.Stripe, arguments);
 };
 Schema.validateCVC = function() {
     return Schema.card.validateCVC.apply(this, arguments);
 };
+
+/**
+ * Get a public client instance if public key is defined
+ *
+ * @return Schema.Client
+ */
+Schema.client = function() {
+
+    if (this._publicClient) {
+        return this._publicClient;
+    }
+    if (!this.publicKey) {
+        throw "Error: Public key must be set Schema.setPublicKey()";
+    }
+
+    this._publicClient = new Schema.Client(this.publicKey, {hostUrl: this.publicUrl});
+
+    return this._publicClient;
+};
+
+/**
+ * Get a vault client instance if public key is defined
+ *
+ * @return Schema.Client
+ */
+Schema.vault = function() {
+
+    if (this._vaultClient) {
+        return this._vaultClient;
+    }
+    if (!this.publicKey) {
+        throw "Error: Public key must be set Schema.setPublicKey()";
+    }
+
+    this._vaultClient = new Schema.Client(this.publicKey, {hostUrl: this.vaultUrl});
+
+    return this._vaultClient;
+};
+
+/**
+ * Execute a public request
+ *
+ * @param  string method
+ * @param  string url
+ * @param  mixed data
+ * @param  function callback
+ */
+Schema.request = function(method, url, data, callback) {
+
+
+};
+
 
 /**
  * Include Stripe (v2)

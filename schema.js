@@ -1,4 +1,4 @@
-/*! schema.js (Version 1.0.4) 2015-10-20 */
+/*! schema.js (Version 1.0.4) 2015-10-27 */
 
 // Promise 6.0.0 (source: https://www.promisejs.org/polyfills/promise-6.0.0.js)
 (function e(t, n, r) {
@@ -382,8 +382,9 @@
 (function() {
 
 var Schema = this.Schema = {
-    publicKey: null, // Used for standard API calls
-    publishableKey: null // Used for card gateway API calls
+    publicUrl: 'https://api.schema.io',
+    vaultUrl: 'https://vault.schema.io',
+    publicKey: null // Used for standard API calls
 };
 
 /**
@@ -393,15 +394,17 @@ var Schema = this.Schema = {
  */
 Schema.setPublicKey = function(key) {
     this.publicKey = key;
+    delete this._vaultClient;
+    delete this._publicClient;
 };
 
 /**
- * Set publishable key for gateway requests (Stripe only)
+ * Alias for stripe.js compatibility
  *
  * @param  string key
  */
 Schema.setPublishableKey = function(key) {
-    this.publishableKey = key;
+    return Schema.setPublicKey(key);
 };
 
 /**
@@ -413,16 +416,10 @@ Schema.card = {};
  * Create a token from card details
  *
  * @param  object card
- * @param  string gateway
  * @param  function callback
  * @return void
  */
-Schema.card.createToken = function(card, gateway, callback) {
-
-    if (typeof gateway === 'function') {
-        callback = gateway;
-        gateway = 'test_card';
-    }
+Schema.card.createToken = function(card, callback) {
 
     var error = null;
     if (!card) {
@@ -437,9 +434,6 @@ Schema.card.createToken = function(card, gateway, callback) {
     if (!Schema.card.validateCVC(card.cvc)) {
         error = 'Card CVC code appears to be invalid';
     }
-    if (!['test_card', 'stripe'].indexOf(gateway) === -1) {
-        error = 'Gateway not yet supported: '+gateway;
-    }
     if (error) {
         setTimeout(function() {
             callback(200, {error: error});
@@ -447,62 +441,16 @@ Schema.card.createToken = function(card, gateway, callback) {
         return;
     }
 
-    if (gateway === 'stripe') {
-        var billing = card.billing || {};
-        var stripeCard = {
-            number: card.number,
-            cvc: card.cvc,
-            exp_month: card.exp_month,
-            exp_year: card.exp_year,
-            name: billing.name,
-            address_line1: billing.address1,
-            address_line2: billing.address2,
-            address_city: billing.city,
-            address_state: billing.state,
-            address_zip: billing.zip,
-            address_country: billing.country
-        };
-        this.Stripe.setPublishableKey(Schema.publishableKey);
-        this.Stripe.card.createToken(stripeCard, function(status, response) {
-            if (response.error || status != 200) {
-                callback(status, response);
-                return;
-            }
-            var response2 = {
-                card: {
-                    token: response.id,
-                    brand: response.card.brand,
-                    last4: response.card.last4,
-                    gateway: gateway,
-                    exp_month: card.exp_month,
-                    exp_year: card.exp_year,
-                    address_check: response.card.address_line1_check,
-                    zip_check: response.card.address_zip_check,
-                    cvc_check: response.card.cvc_check
-                }
-            };
-            if (!response.livemode) {
-                response2.card.test = true;
-            }
-            callback(status, response2);
-        });
-    } else {
-        // TODO: integrate with card vault
-        setTimeout(function() {
-            callback(200, {
-                card: {
-                    // Note: just for testing
-                    token: 'test_card_token_'+(new Date().getTime()),
-                    brand: 'Visa',
-                    last4: card.number.trim().substring(card.number.length - 4),
-                    gateway: 'test_card',
-                    exp_month: card.exp_month,
-                    exp_year: card.exp_year,
-                    test: true
-                }
-            });
-        }, 1000);
-    }
+    // Get a token from Schema Vault
+    Schema.vault().post('/tokens', card, function(result, headers) {
+        var response = result;
+        if (result.errors) {
+            var param = Object.keys(result.errors)[0];
+            response.error = result.errors[param];
+            response.error.param = param;
+        }
+        return callback(headers.$status, response);
+    });
 };
 Schema.createToken = function() {
     return Schema.card.createToken.apply(this, arguments);
@@ -512,7 +460,7 @@ Schema.createToken = function() {
  * Determine card type
  */
 Schema.card.cardType = function() {
-    return this.Stripe.card.cardType.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.cardType.apply(Schema.Stripe, arguments);
 };
 Schema.cardType = function() {
     return Schema.card.cardType.apply(this, arguments);
@@ -522,7 +470,7 @@ Schema.cardType = function() {
  * Validate card number
  */
 Schema.card.validateCardNumber = function() {
-    return this.Stripe.card.validateCardNumber.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.validateCardNumber.apply(Schema.Stripe, arguments);
 };
 Schema.validateCardNumber = function() {
     return Schema.card.validateCardNumber.apply(this, arguments);
@@ -532,7 +480,7 @@ Schema.validateCardNumber = function() {
  * Validate card expiry
  */
 Schema.card.validateExpiry = function() {
-    return this.Stripe.card.validateExpiry.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.validateExpiry.apply(Schema.Stripe, arguments);
 };
 Schema.validateExpiry = function() {
     return Schema.card.validateExpiry.apply(this, arguments);
@@ -542,11 +490,63 @@ Schema.validateExpiry = function() {
  * Validate card CVC code
  */
 Schema.card.validateCVC = function() {
-    return this.Stripe.card.validateCVC.apply(this.Stripe, arguments);
+    return Schema.Stripe.card.validateCVC.apply(Schema.Stripe, arguments);
 };
 Schema.validateCVC = function() {
     return Schema.card.validateCVC.apply(this, arguments);
 };
+
+/**
+ * Get a public client instance if public key is defined
+ *
+ * @return Schema.Client
+ */
+Schema.client = function() {
+
+    if (this._publicClient) {
+        return this._publicClient;
+    }
+    if (!this.publicKey) {
+        throw "Error: Public key must be set Schema.setPublicKey()";
+    }
+
+    this._publicClient = new Schema.Client(this.publicKey, {hostUrl: this.publicUrl});
+
+    return this._publicClient;
+};
+
+/**
+ * Get a vault client instance if public key is defined
+ *
+ * @return Schema.Client
+ */
+Schema.vault = function() {
+
+    if (this._vaultClient) {
+        return this._vaultClient;
+    }
+    if (!this.publicKey) {
+        throw "Error: Public key must be set Schema.setPublicKey()";
+    }
+
+    this._vaultClient = new Schema.Client(this.publicKey, {hostUrl: this.vaultUrl});
+
+    return this._vaultClient;
+};
+
+/**
+ * Execute a public request
+ *
+ * @param  string method
+ * @param  string url
+ * @param  mixed data
+ * @param  function callback
+ */
+Schema.request = function(method, url, data, callback) {
+
+
+};
+
 
 /**
  * Include Stripe (v2)
@@ -1476,23 +1476,232 @@ var util = this.Schema.util;
  * @param  string publicKey
  * @param  object options
  */
-var Client = this.Schema.Client = function(clientId, publicKey, options) {
+var Client = this.Schema.Client = function(publicKey, options) {
 
     if (typeof publicKey === 'object') {
         options = publicKey;
-        publicKey = clientId;
-    } else if (typeof clientId === 'object') {
-        options = clientId;
-        clientId = undefined;
+        publicKey = undefined;
+    } else {
+        options = options || {};
     }
     this.options = {
-        clientId: clientId || options.clientId,
         publicKey: publicKey || options.publicKey || this.Schema.publicKey,
-        apiUrl: options.apiUrl || 'https://api.schema.io',
-        vaultUrl: options.vaultUrl || 'https://vault.schema.io',
-        verifyCert: options.verifyCert || true,
-        version: options.version || 1
+        hostUrl: options.hostUrl || this.Schema.publicUrl,
+        timeout: options.timeout || 15000,
+        version: options.version,
+        session: options.session,
+        api: options.api
     };
+};
+
+/**
+ * Execute a client request using JSONP
+ *
+ * @param  string method
+ * @param  string url
+ * @param  mixed data
+ * @param  function callback
+ */
+Client.prototype.request = function(method, url, data, callback) {
+
+    if (typeof data === 'function') {
+        callback = data;
+        data = null;
+    }
+
+    // TODO: implement $cached
+
+    var requestId = Client.generateRequestId();
+
+    url = url && url.toString ? url.toString() : '';
+    data = {
+        $jsonp: {
+            method: method,
+            callback: 'Schema.Client.response'+requestId,
+        },
+        $data: data,
+        $key: this.options.publicKey
+    };
+
+    var script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.src = this.options.hostUrl
+        + '/' + url.replace(/^\//, '')
+        + '?' + Client.serializeData(data);
+
+    var self = this;
+    var errorTimeout = setTimeout(function() {
+        Schema.Client['response'+requestId]({
+            $error: 'Request timed out after '+(self.options.timeout/1000)+' seconds',
+            $status: 500
+        });
+    }, self.options.timeout);
+
+    Schema.Client['response'+requestId] = function(response) {
+        clearTimeout(errorTimeout);
+        self.response(method, url, response, callback);
+        delete Schema.Client['response'+requestId];
+        script.parentNode.removeChild(script);
+    };
+
+    document.getElementsByTagName("head")[0].appendChild(script);
+};
+
+/**
+ * Client response handler
+ *
+ * @param  string method
+ * @param  string url
+ * @param  mixed result
+ * @param  function callback
+ */
+Client.prototype.response = function(method, url, result, callback) {
+
+    var actualResult = null;
+
+    if (result
+    && result.$data
+    && (typeof result.$data === 'object')) {
+        actualResult = Client.createResource(result.$url, result, this);
+    } else {
+        actualResult = result.$data;
+    }
+    return callback && callback.call(this, actualResult, result);
+};
+
+/**
+ * GET a resource
+ *
+ * @param  string url
+ * @param  mixed data
+ * @param  function callback
+ */
+Client.prototype.get = function(url, data, callback) {
+    return this.request('get', url, data, callback);
+};
+
+/**
+ * PUT a resource
+ *
+ * @param  string url
+ * @param  mixed data
+ * @param  function callback
+ */
+Client.prototype.put = function(url, data, callback) {
+    return this.request('put', url, data, callback);
+};
+
+/**
+ * POST a resource
+ *
+ * @param  string url
+ * @param  mixed data
+ * @param  function callback
+ */
+Client.prototype.post = function(url, data, callback) {
+    return this.request('post', url, data, callback);
+};
+
+/**
+ * DELETE a resource
+ *
+ * @param  string url
+ * @param  mixed data
+ * @param  function callback
+ */
+Client.prototype.delete = function(url, data, callback) {
+    return this.request('delete', url, data, callback);
+};
+
+/**
+ * Generate a unique request ID for response callbacks
+ *
+ * @return number
+ */
+Client.generateRequestId = function() {
+
+    window.__schema_client_request_id = window.__schema_client_request_id || 0;
+    window.__schema_client_request_id++;
+    return window.__schema_client_request_id;
+};
+
+/**
+ * Serialize data into a query string
+ * Mostly copied from jQuery.param
+ *
+ * @param  mixed data
+ * @return string
+ */
+Client.serializeData = function(data) {
+
+    var key;
+    var s = [];
+    var add = function(key, value) {
+        // If value is a function, invoke it and return its value
+        if (typeof value === 'function') {
+            value = value();
+        } else if (value == null) {
+            value = '';
+        }
+        s[s.length] = encodeURIComponent(key) + '=' + encodeURIComponent(value);
+    };
+    for (key in data) {
+        buildParams(key, data[key], add);
+    }
+    return s.join('&').replace(' ', '+');
+};
+var rbracket = /\[\]$/;
+function buildParams(key, obj, add) {
+    var name;
+    if (obj instanceof Array) {
+        for (var i = 0; i < obj.length; i++) {
+            if (rbracket.test(key) ) {
+                // Treat each array item as a scalar.
+                add(key, v);
+            } else {
+                // Item is non-scalar (array or object), encode its numeric index.
+                buildParams(
+                    key + '[' + (typeof v === 'object' && v != null ? i : '') + ']',
+                    v,
+                    add
+                );
+            }
+        }
+    } else if (obj && typeof obj === 'object') {
+        // Serialize object item.
+        for (name in obj) {
+            buildParams(key + '[' + name + ']', obj[name], add);
+        }
+    } else {
+        // Serialize scalar item.
+        add(key, obj);
+    }
+}
+
+/**
+ * Client create/init helper
+ *
+ * @param  string publicKey
+ * @param  object options
+ * @return Client
+ */
+Client.create = function(publicKey, options) {
+    return new Client(publicKey, options);
+};
+
+/**
+ * Create a resource from result data
+ *
+ * @param  string url
+ * @param  mixed result
+ * @param  Client client
+ * @return Resource
+ */
+Client.createResource = function(url, result, client) {
+    if (result && result.$data && 'count' in result.$data && result.$data.results) {
+        return new Schema.Collection(url, result, client);
+    }
+    return new Schema.Record(url, result, client);
 };
 
 }).call(this);
@@ -1510,13 +1719,12 @@ var Form = Schema.Form = {};
  * Validate and tokenize card data for payment forms
  *
  * @param  object params
- *  string publishableKey (Required)
+ *  string publicKey (Required)
  *      - Public/publishable key for tokenization
  *  HTMLFormElement form (Optional) (Default: first form element)
  *      - Represents the form to capture data
  *  string name (Optional) (Default: 'card')
  *      - Name of the card submission parameter
- *  string gateway (Optional) (Default: 'stripe')
  *      - Id of the payment gateway to use for tokenization
  *  function onError (Optional)
  *      - Handler for card errors triggered on submit
@@ -1621,12 +1829,27 @@ Form._onSubmitCard = function(params, event) {
     // Card data is valid, continue to process
     params.form.__cardData = dataSerialized;
 
-    Schema.setPublishableKey(params.publicKey);
-    Schema.card.createToken(data, params.gateway, function(status, response) {
-        if (response.error) {
+    Schema.setPublicKey(params.publicKey);
+    Schema.card.createToken(data, function(status, response) {
+        if (response.errors) {
             params.form.__cardData = null;
+            for (var key in response.errors) {
+                var field;
+                switch (key) {
+                    case 'exp_month': field = params.fields.cardExp || params.fields.cardExpMonth; break;
+                    case 'exp_year': field = params.fields.cardExp || params.fields.cardExpYear; break;
+                    case 'cvc': field = params.fields.cardCVC; break;
+                    case 'number':
+                    default:
+                        field = params.fields.cardNumber; break;
+                }
+                Form._triggerFieldError(
+                    params.onError, field, response.errors[key].message
+                );
+            }
+        } else if (status > 200) {
             Form._triggerFieldError(
-                params.onError, params.fields.cardNumber, response.error.message
+                params.onError, params.fields.cardNumber, 'Unknown gateway error, please try again'
             );
         } else {
             // Clear previous data fields first
@@ -1636,15 +1859,15 @@ Form._onSubmitCard = function(params, event) {
             }
             // Append card response fields to form
             var fieldName = params.name;
-            for (var key in response.card) {
-                if (typeof response.card[key] === 'object') {
+            for (var key in response) {
+                if (typeof response[key] === 'object') {
                     continue;
                 }
                 var el = document.createElement('input');
                 el.type = 'hidden';
                 el.className = 'x-card-response-data';
                 el.name = params.name + '['+key+']';
-                el.value = response.card[key];
+                el.value = response[key];
                 params.form.appendChild(el);
             }
             params.form.submit();
@@ -1686,11 +1909,9 @@ Form._validateCardParams = function(params) {
 
     params || {};
 
-    // Ensure valid publishable key
-    // Note: publishableKey is standard term until publicKey is available
-    params.publicKey = params.publicKey || params.publishableKey;
+    params.publicKey = params.publicKey || Schema.publicKey;
     if (!params.publicKey) {
-        throw "Form.onSubmitCard(): publishableKey required";
+        throw "Form.onSubmitCard(): publicKey required";
     }
 
     // Ensure valid form element
@@ -1743,9 +1964,6 @@ Form._validateCardParams = function(params) {
 
     // Default submit parameter name
     params.name = params.name || 'card';
-
-    // Default payment gatway
-    params.gateway = params.gateway || 'stripe';
 };
 
 /**

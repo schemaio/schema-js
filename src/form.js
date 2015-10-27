@@ -10,13 +10,12 @@ var Form = Schema.Form = {};
  * Validate and tokenize card data for payment forms
  *
  * @param  object params
- *  string publishableKey (Required)
+ *  string publicKey (Required)
  *      - Public/publishable key for tokenization
  *  HTMLFormElement form (Optional) (Default: first form element)
  *      - Represents the form to capture data
  *  string name (Optional) (Default: 'card')
  *      - Name of the card submission parameter
- *  string gateway (Optional) (Default: 'stripe')
  *      - Id of the payment gateway to use for tokenization
  *  function onError (Optional)
  *      - Handler for card errors triggered on submit
@@ -121,12 +120,27 @@ Form._onSubmitCard = function(params, event) {
     // Card data is valid, continue to process
     params.form.__cardData = dataSerialized;
 
-    Schema.setPublishableKey(params.publicKey);
-    Schema.card.createToken(data, params.gateway, function(status, response) {
-        if (response.error) {
+    Schema.setPublicKey(params.publicKey);
+    Schema.card.createToken(data, function(status, response) {
+        if (response.errors) {
             params.form.__cardData = null;
+            for (var key in response.errors) {
+                var field;
+                switch (key) {
+                    case 'exp_month': field = params.fields.cardExp || params.fields.cardExpMonth; break;
+                    case 'exp_year': field = params.fields.cardExp || params.fields.cardExpYear; break;
+                    case 'cvc': field = params.fields.cardCVC; break;
+                    case 'number':
+                    default:
+                        field = params.fields.cardNumber; break;
+                }
+                Form._triggerFieldError(
+                    params.onError, field, response.errors[key].message
+                );
+            }
+        } else if (status > 200) {
             Form._triggerFieldError(
-                params.onError, params.fields.cardNumber, response.error.message
+                params.onError, params.fields.cardNumber, 'Unknown gateway error, please try again'
             );
         } else {
             // Clear previous data fields first
@@ -136,15 +150,15 @@ Form._onSubmitCard = function(params, event) {
             }
             // Append card response fields to form
             var fieldName = params.name;
-            for (var key in response.card) {
-                if (typeof response.card[key] === 'object') {
+            for (var key in response) {
+                if (typeof response[key] === 'object') {
                     continue;
                 }
                 var el = document.createElement('input');
                 el.type = 'hidden';
                 el.className = 'x-card-response-data';
                 el.name = params.name + '['+key+']';
-                el.value = response.card[key];
+                el.value = response[key];
                 params.form.appendChild(el);
             }
             params.form.submit();
@@ -186,11 +200,9 @@ Form._validateCardParams = function(params) {
 
     params || {};
 
-    // Ensure valid publishable key
-    // Note: publishableKey is standard term until publicKey is available
-    params.publicKey = params.publicKey || params.publishableKey;
+    params.publicKey = params.publicKey || Schema.publicKey;
     if (!params.publicKey) {
-        throw "Form.onSubmitCard(): publishableKey required";
+        throw "Form.onSubmitCard(): publicKey required";
     }
 
     // Ensure valid form element
@@ -243,9 +255,6 @@ Form._validateCardParams = function(params) {
 
     // Default submit parameter name
     params.name = params.name || 'card';
-
-    // Default payment gatway
-    params.gateway = params.gateway || 'stripe';
 };
 
 /**
