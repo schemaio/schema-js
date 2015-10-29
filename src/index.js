@@ -44,32 +44,42 @@ Schema.card = {};
 Schema.card.createToken = function(card, callback) {
 
     var error = null;
+    var param = null
     if (!card) {
         error = 'Card details are missing';
+        param = 'number';
     }
     if (!Schema.card.validateCardNumber(card.number)) {
         error = 'Card number appears to be invalid';
+        param = 'number';
     }
     if (!Schema.card.validateExpiry(card.exp_month, card.exp_year)) {
         error = 'Card expiry appears to be invalid';
+        param = 'exp_month';
     }
     if (!Schema.card.validateCVC(card.cvc)) {
         error = 'Card CVC code appears to be invalid';
+        param = 'exp_cvc';
     }
     if (error) {
         setTimeout(function() {
-            callback(200, {error: error});
+            callback(402, {error: {message: error, param: param}});
         }, 10);
         return;
     }
 
     // Get a token from Schema Vault
     Schema.vault().post('/tokens', card, function(result, headers) {
-        var response = result;
-        if (result.errors) {
+        var response = result || {};
+        if (headers.$error) {
+            response.error = {message: headers.$error};
+        } else if (response.errors) {
             var param = Object.keys(result.errors)[0];
             response.error = result.errors[param];
             response.error.param = param;
+            headers.$status = 402;
+        } else if (result.toObject) {
+            response = result.toObject();
         }
         return callback(headers.$status, response);
     });
