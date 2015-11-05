@@ -1,4 +1,4 @@
-/*! schema.js (Version 1.1.2) 2015-11-05 */
+/*! schema.js (Version 1.1.3) 2015-11-05 */
 
 // Promise 6.0.0 (source: https://www.promisejs.org/polyfills/promise-6.0.0.js)
 (function e(t, n, r) {
