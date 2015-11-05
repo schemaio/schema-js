@@ -65,6 +65,14 @@ Form._onSubmitCard = function(params, event) {
         }
     };
 
+    // Trigger submit handler
+    if (typeof params.onSubmit === 'function') {
+        // Return false to prevent default
+        if (params.onSubmit(data) === false) {
+            return;
+        }
+    }
+
     // Card values are serialized and validated on change
     var dataSerialized = JSON.stringify(data);
 
@@ -76,41 +84,36 @@ Form._onSubmitCard = function(params, event) {
     // Prevent form submission
     Form._preventDefault(event);
 
-    // Trigger submit handler
-    if (typeof params.onSubmit === 'function') {
-        params.onSubmit();
-    }
-
     // Validate card data
     var fieldsValid = true;
     if (!Schema.validateCVC(data.cvc)) {
         fieldsValid = false;
         Form._triggerFieldError(
-            params.onError, params.fields.cardCVC, 'Card CVC code is not valid'
+            params.onError, params.fields.cardCVC, ''
         );
     }
     if (!Schema.validateExpiry(data.exp_month, data.exp_year)) {
         fieldsValid = false;
         if (params.fields.cardExp) {
             Form._triggerFieldError(
-                params.onError, params.fields.cardExp, 'Card expiry is not valid'
+                params.onError, params.fields.cardExp, ''
             );
         }
         if (params.fields.cardExpMonth) {
             Form._triggerFieldError(
-                params.onError, params.fields.cardExpMonth, 'Card expiry month is not valid'
+                params.onError, params.fields.cardExpMonth, ''
             );
         }
         if (params.fields.cardExpYear) {
             Form._triggerFieldError(
-                params.onError, params.fields.cardExpYear, 'Card expiry year is not valid'
+                params.onError, params.fields.cardExpYear, ''
             );
         }
     }
-    if (!Schema.validateCardNumber(data.number)) {
+    if (!Schema.validateCardNumber(data.number) || !data.number) {
         fieldsValid = false;
         Form._triggerFieldError(
-            params.onError, params.fields.cardNumber, 'Card number is not valid'
+            params.onError, params.fields.cardNumber, ''
         );
     }
     if (!fieldsValid) {
