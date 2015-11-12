@@ -6,7 +6,7 @@
 var Schema = this.Schema = {
     publicUrl: 'https://api.schema.io',
     vaultUrl: 'https://vault.schema.io',
-    publicKey: null // Used for standard API calls
+    publicKey: null
 };
 
 /**
@@ -30,7 +30,7 @@ Schema.setPublishableKey = function(key) {
 };
 
 /**
- * Schema card methods
+ * Alias card namespace
  */
 Schema.card = {};
 
@@ -41,17 +41,26 @@ Schema.card = {};
  * @param  function callback
  * @return void
  */
-Schema.card.createToken = function(card, callback) {
+Schema.createToken = function(card, callback) {
 
     var error = null;
     var param = null
     if (!card) {
-        error = 'Card details are missing';
-        param = 'number';
+        error = 'Card details are missing in `Schema.createToken(card, callback)`';
+        param = '';
+    }
+    if (!callback) {
+        error = 'Callback function missing in `Schema.createToken(card, callback)`';
+        param = '';
     }
     if (!Schema.card.validateCardNumber(card.number)) {
         error = 'Card number appears to be invalid';
         param = 'number';
+    }
+    if (card.exp) {
+        var exp = Schema.cardExpiry(card.exp);
+        card.exp_month = exp.month;
+        card.exp_year = exp.year;
     }
     if (!Schema.card.validateExpiry(card.exp_month, card.exp_year)) {
         error = 'Card expiry appears to be invalid';
@@ -64,8 +73,30 @@ Schema.card.createToken = function(card, callback) {
     if (error) {
         setTimeout(function() {
             callback(402, {error: {message: error, param: param}});
-        }, 10);
+        }, 1);
         return;
+    }
+
+    if (!card.billing) {
+        card.billing = {};
+    }
+    if (card.address_line1) {
+        card.billing.address1 = card.address_line1;
+    }
+    if (card.address_line2) {
+        card.billing.address2 = card.address_line2;
+    }
+    if (card.address_city) {
+        card.billing.city = card.address_city;
+    }
+    if (card.address_state) {
+        card.billing.state = card.address_state;
+    }
+    if (card.address_zip) {
+        card.billing.zip = card.address_zip;
+    }
+    if (card.address_country) {
+        card.billing.country = card.address_country;
     }
 
     // Get a token from Schema Vault
@@ -84,48 +115,76 @@ Schema.card.createToken = function(card, callback) {
         return callback(headers.$status, response);
     });
 };
-Schema.createToken = function() {
-    return Schema.card.createToken.apply(this, arguments);
+Schema.card.createToken = function() {
+    return Schema.createToken.apply(this, arguments);
+};
+
+/**
+ * Parse card expiry from a string value
+ *
+ * @param  string value
+ * @return object {month: int, year: int}
+ */
+Schema.cardExpiry = function(value) {
+
+    if (value && value.month && value.year) {
+        return value;
+    }
+
+    var parts = new String(value).split(/[\s\/\-]+/, 2);
+    var month = parts[0];
+    var year = parts[1];
+
+    // Convert 2 digit year
+    if (year && year.length === 2 && /^\d+$/.test(year)) {
+        var prefix = (new Date).getFullYear().toString().substring(0, 2);
+        year = prefix + year;
+    }
+
+    return {
+        month: ~~month,
+        year: ~~year
+    };
 };
 
 /**
  * Determine card type
  */
-Schema.card.cardType = function() {
+Schema.cardType = function() {
     return Schema.Stripe.card.cardType.apply(Schema.Stripe, arguments);
 };
-Schema.cardType = function() {
-    return Schema.card.cardType.apply(this, arguments);
+Schema.card.cardType = function() {
+    return Schema.cardType.apply(this, arguments);
 };
 
 /**
  * Validate card number
  */
-Schema.card.validateCardNumber = function() {
+Schema.validateCardNumber = function() {
     return Schema.Stripe.card.validateCardNumber.apply(Schema.Stripe, arguments);
 };
-Schema.validateCardNumber = function() {
-    return Schema.card.validateCardNumber.apply(this, arguments);
+Schema.card.validateCardNumber = function() {
+    return Schema.validateCardNumber.apply(this, arguments);
 };
 
 /**
  * Validate card expiry
  */
-Schema.card.validateExpiry = function() {
+Schema.validateExpiry = function() {
     return Schema.Stripe.card.validateExpiry.apply(Schema.Stripe, arguments);
 };
-Schema.validateExpiry = function() {
-    return Schema.card.validateExpiry.apply(this, arguments);
+Schema.card.validateExpiry = function() {
+    return Schema.validateExpiry.apply(this, arguments);
 };
 
 /**
  * Validate card CVC code
  */
-Schema.card.validateCVC = function() {
+Schema.validateCVC = function() {
     return Schema.Stripe.card.validateCVC.apply(Schema.Stripe, arguments);
 };
-Schema.validateCVC = function() {
-    return Schema.card.validateCVC.apply(this, arguments);
+Schema.card.validateCVC = function() {
+    return Schema.validateCVC.apply(this, arguments);
 };
 
 /**
@@ -164,19 +223,6 @@ Schema.vault = function() {
     this._vaultClient = new Schema.Client(this.publicKey, {hostUrl: this.vaultUrl});
 
     return this._vaultClient;
-};
-
-/**
- * Execute a public request
- *
- * @param  string method
- * @param  string url
- * @param  mixed data
- * @param  function callback
- */
-Schema.request = function(method, url, data, callback) {
-
-
 };
 
 

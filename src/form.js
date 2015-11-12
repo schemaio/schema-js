@@ -4,7 +4,7 @@
 (function() {
 
 var Schema = this.Schema;
-var Form = Schema.Form = {};
+var Form = Schema.Form = Schema.form = {};
 
 /**
  * Validate and tokenize card data for payment forms
@@ -36,7 +36,7 @@ Form._onSubmitCard = function(params, event) {
     // Card expiry is { month: 00, year: 0000 }
     var cardExpiry;
     if (params.fields.cardExp) {
-        cardExpiry = Form.cardExpiryVal(params.fields.cardExp.value);
+        cardExpiry = Schema.cardExpiry(params.fields.cardExp.value);
     } else {
         cardExpiry = {
             month: params.fields.cardExpMonth.value,
@@ -167,31 +167,6 @@ Form._onSubmitCard = function(params, event) {
             params.form.submit();
         }
     });
-};
-
-/**
- *
- */
-Form.cardExpiryVal = function(value) {
-
-    var parts = value.split(/[\s\/]+/, 2);
-    var month = parts[0];
-    var year = parts[1];
-
-    // Convert 2 digit year
-    if (year && year.length === 2 && /^\d+$/.test(year)) {
-        var prefix = (new Date).getFullYear().toString().substring(0, 2);
-        year = prefix + year;
-    }
-    // Ensure 2 digit month
-    if (month && month.length === 1) {
-        month = '0' + month;
-    }
-
-    return {
-        month: month,
-        year: year
-    };
 };
 
 /**
