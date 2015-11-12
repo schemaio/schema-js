@@ -23,7 +23,7 @@ Add this tag to your web page.
 
 ### Set your public key
 
-Create an account on https://schema.io and get your public API key from `Admin > Settings > API Keys`.
+Sign up at https://schema.io and get your public API key from `Admin > Settings > API Keys`.
 
 Your public key provides access to public resources within your account. Unlike your private key, it starts with `pk_` and cannot be used to access sensitive data.
 
