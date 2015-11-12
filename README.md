@@ -5,8 +5,6 @@ Schema.js makes it easy to...
 1. Collect credit card information without having it touch your server
 2. Build product and checkout pages without compromising sensitive data
 
-To use Schema.js, create an account on https://schema.io and get your public API key from Settings > API Keys.
-
 If you need help getting started, join our Slack channel at https://slack.schema.io.
 
 ### Stripe.js compatibility
@@ -24,6 +22,8 @@ Add this tag to your web page.
 ```
 
 ### Set your public key
+
+Create an account on https://schema.io and get your public API key from `Admin > Settings > API Keys`.
 
 Your public key provides access to public resources within your account. Unlike your private key, it starts with `pk_` and cannot be used to access sensitive data.
 
