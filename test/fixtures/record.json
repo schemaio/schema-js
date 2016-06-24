@@ -1,0 +1,28 @@
+{
+  "$data": {
+    "id": 1,
+    "name": "Test Product",
+    "category_id": 1,
+    "images": [{
+      "url": "/path/to/cdn1",
+      "file_id": 1
+    }, {
+      "url": "/path/to/cdn2",
+      "file_id": 2
+    }]
+  },
+  "$links": {
+    "category": {
+      "url": "/categories/{category_id}"
+    },
+    "images": {
+      "links": {
+        "*": {
+          "file": {
+            "url": "/:files/{file_id}"
+          }
+        }
+      }
+    }
+  }
+}
